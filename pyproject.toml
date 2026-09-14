@@ -18,7 +18,6 @@ dependencies = [
     "toml>=0.10.2",
     "goal>=2.1.190",
     "costs>=0.1.51",
-    "pfix>=0.1.73",
     "mcp>=1.27.1,<2.0.0",
 ]
 classifiers = [
@@ -45,7 +44,6 @@ dev = [
     "pyqual>=0.1.143",
     "goal>=2.1.190",
     "costs>=0.1.51",
-    "pfix>=0.1.73",
     "mcp>=1.27.1,<2.0.0",
 ]
 
@@ -73,22 +71,6 @@ include = [
     "/LICENSE",
     "/CHANGELOG.md",
 ]
-
-[tool.pfix]
-# Self-healing Python configuration
-model = "openrouter/qwen/qwen3-coder-next"
-auto_apply = true
-auto_install_deps = true
-auto_restart = false
-max_retries = 3
-create_backups = false
-git_auto_commit = false
-
-[tool.pfix.runtime_todo]
-enabled = true
-todo_file = "TODO.md"
-min_severity = "low"
-deduplicate = true
 
 [tool.costs]
 # AI Cost tracking configuration
