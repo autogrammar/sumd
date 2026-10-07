@@ -289,11 +289,17 @@ def _check_unclosed_fences(lines: list[str], source: str) -> list[str]:
     return []
 
 
+def _strip_fenced_code_blocks(content: str) -> str:
+    """Remove fenced code blocks so code syntax like arr[i]() is not validated as markdown links."""
+    return re.sub(r"```[\s\S]*?```", "", content)
+
+
 def _check_empty_links(content: str, source: str) -> list[str]:
-    """Return errors for markdown links with empty href."""
+    """Return errors for markdown links with empty href outside fenced code blocks."""
+    stripped = _strip_fenced_code_blocks(content)
     return [
         f"{source}: empty link href for [{text}]()"
-        for text in re.findall(r"\[([^\]]+)\]\(\s*\)", content)
+        for text in re.findall(r"\[([^\]]+)\]\(\s*\)", stripped)
     ]
 
 

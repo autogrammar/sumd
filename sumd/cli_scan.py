@@ -22,8 +22,15 @@ _SKIP_DIRS = {
     "site-packages",
     "dist",
     "build",
+    "target",
+    "state",
+    "artifacts",
     ".tox",
     ".mypy_cache",
+    ".worktrees",
+    "twinerd-bench-results",
+    "benchmarks",
+    "bench-results",
 }
 
 _PROJECT_MARKER_FILES: frozenset[str] = frozenset({
@@ -285,9 +292,16 @@ def _maybe_generate_testql(proj_dir: Path) -> None:
     Only runs when no *.testql.toon.yaml files are found in the project.
     Requires the testql CLI to be installed and available on PATH.
     """
-    has_testql = any(
-        proj_dir.rglob("*.testql.toon.yaml")
-    )
+    # Fast bounded check for existing testql files without traversing all nested subdirs
+    has_testql = False
+    for candidate in [proj_dir / "testql-scenarios", proj_dir / "tests", proj_dir]:
+        if candidate.is_dir():
+            try:
+                if any(candidate.glob("*.testql.toon.yaml")) or any(candidate.glob("*/*.testql.toon.yaml")):
+                    has_testql = True
+                    break
+            except (PermissionError, OSError):
+                pass
     if has_testql:
         return
 
