@@ -109,7 +109,15 @@
           "events/**",
           "error/**",
           "models/**",
-          "proto/**"
+          "proto/**",
+          ".governance/manifest.json",
+          ".governance/manifest.lock.json",
+          "sumd/autoupdate.py",
+          "sumd/cli.py",
+          "sumd/cli_scan.py",
+          "sumd/extractor.py",
+          "sumd/toon_parser.py",
+          "sumd/validator.py"
         ]
       },
       "interfaces": {
