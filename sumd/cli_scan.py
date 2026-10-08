@@ -4,7 +4,6 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 import click
 
@@ -292,12 +291,14 @@ def _maybe_generate_testql(proj_dir: Path) -> None:
     Only runs when no *.testql.toon.yaml files are found in the project.
     Requires the testql CLI to be installed and available on PATH.
     """
-    # Fast bounded check for existing testql files without traversing all nested subdirs
+    # Fast bounded check for existing testql files without traversing all nested subdirs.
     has_testql = False
     for candidate in [proj_dir / "testql-scenarios", proj_dir / "tests", proj_dir]:
         if candidate.is_dir():
             try:
-                if any(candidate.glob("*.testql.toon.yaml")) or any(candidate.glob("*/*.testql.toon.yaml")):
+                if any(candidate.glob("*.testql.toon.yaml")) or any(
+                    candidate.glob("*/*.testql.toon.yaml")
+                ):
                     has_testql = True
                     break
             except (PermissionError, OSError):
@@ -313,7 +314,7 @@ def _maybe_generate_testql(proj_dir: Path) -> None:
             timeout=120,
         )
         if result.returncode == 0:
-            click.echo(f"   🧪 Generated testql scenarios")
+            click.echo("   🧪 Generated testql scenarios")
         else:
             click.echo(f"   ⚠️  testql generate failed: {result.stderr[:200]}")
     except FileNotFoundError:

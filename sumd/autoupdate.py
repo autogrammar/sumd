@@ -33,6 +33,7 @@ def _is_newer(latest: str, current: str) -> bool:
     """Check if latest is strictly newer than current, with zero hard dependency."""
     try:
         from packaging import version
+
         return version.parse(latest) > version.parse(current)
     except Exception:
         pass
@@ -55,7 +56,7 @@ def _is_newer(latest: str, current: str) -> bool:
 def _spawn_detached_check(pkg_name: str, current_version: str, cache_file: Path) -> None:
     """Launch completely detached background worker process."""
     worker_code = f"""
-import json, sys, time
+import json, time
 from urllib import request
 from pathlib import Path
 
@@ -104,7 +105,8 @@ def check_for_updates(
 
     Reads previous check result from disk (fast, ~0.1ms). If an update was found
     in a previous run, displays a notice on stderr.
-    Spawns a detached process to query PyPI in the background only when the cache is expired.
+    Spawns a detached process to query PyPI in the background only when the
+    cache is expired.
     """
     if os.environ.get("CI") or os.environ.get("NO_AUTOUPDATE"):
         return
@@ -134,9 +136,16 @@ def check_for_updates(
         try:
             if _is_newer(cached_latest, current_version):
                 sys.stderr.write(
-                    "\n💡 [" + pkg_name + "] Nowa wersja dostępna: "
-                    + current_version + " → " + cached_latest + "\n"
-                    + "   Aby zaktualizować, uruchom: pip install --upgrade " + pkg_name + "\n\n"
+                    "\n["
+                    + pkg_name
+                    + "] Update available: "
+                    + current_version
+                    + " -> "
+                    + cached_latest
+                    + "\n"
+                    + "   Run: pip install --upgrade "
+                    + pkg_name
+                    + "\n\n"
                 )
                 sys.stderr.flush()
         except Exception:

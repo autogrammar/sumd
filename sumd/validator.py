@@ -290,7 +290,7 @@ def _check_unclosed_fences(lines: list[str], source: str) -> list[str]:
 
 
 def _strip_fenced_code_blocks(content: str) -> str:
-    """Remove fenced code blocks so code syntax like arr[i]() is not validated as markdown links."""
+    """Remove fenced code blocks before markdown link validation."""
     return re.sub(r"```[\s\S]*?```", "", content)
 
 
