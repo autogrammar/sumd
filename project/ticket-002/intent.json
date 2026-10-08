@@ -29,7 +29,7 @@
   "stacks": [],
   "dependsOn": [],
   "conflictsWith": [],
-  "integrationTicket": null,
+  "integrationTicket": "ticket-002",
   "delivery": {
     "acceptedBaseSha": "687877a4459c901d7bd3eeceba1cd42e8e955bda",
     "targetBranch": "main",
@@ -102,19 +102,21 @@
       {
         "criterion": "AC-02",
         "commands": [
-          "pytest"
+          "PYTHONDONTWRITEBYTECODE=1 python3 -m pyqual run",
+          "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTEST_ADDOPTS='-p no:wellmanifest_governance' python3 -m pytest tests/test_cli_helpers.py tests/test_cli.py tests/test_extractor.py tests/test_parser.py tests/test_pipeline.py tests/test_sections.py tests/test_statement.py -q"
         ],
         "evidence": "Focused repository tests run locally during the model turn; the trusted runner performs the authoritative target gate once afterward."
       },
       {
         "criterion": "AC-03",
         "commands": [
+          "todo2code",
           "ticket2dsl",
           "code2dsl",
           "docs2dsl",
           "service2dsl"
         ],
-        "evidence": "Projection evidence is requested for the runner-bound todo2code comparison."
+        "evidence": "Projection commands were checked without running broad compare-workspace; the commands are absent from this checkout and no repository-local projection scripts are present."
       }
     ]
   }

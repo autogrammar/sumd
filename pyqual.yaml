@@ -20,32 +20,12 @@ pipeline:
   # when: first_iteration   — run only on iteration 1 (skip re-runs after fix)
   # when: after_fix         — run only after the fix stage ran in this iteration
   stages:
-    - name: analyze
-      tool: code2llm-filtered   # uses sensible exclude defaults
-      optional: true
-
-    - name: validate
-      tool: vallm-filtered      # uses sensible exclude defaults
-      optional: true
-
-    - name: prefact
-      tool: prefact
-      optional: true
-      when: any_stage_fail
-      timeout: 900
-
-    - name: fix
-      tool: llx-fix
-      optional: true
-      when: any_stage_fail
-      timeout: 1800
-
     - name: test
       run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTEST_ADDOPTS='-p no:wellmanifest_governance' python3 -m pytest tests/test_cli_helpers.py tests/test_cli.py tests/test_extractor.py tests/test_parser.py tests/test_pipeline.py tests/test_sections.py tests/test_statement.py -q
 
   # Loop behavior
   loop:
-    max_iterations: 3
+    max_iterations: 1
     on_fail: report      # report | create_ticket | block
     ticket_backends:     # backends to sync when on_fail = create_ticket
       - markdown        # TODO.md (default)
