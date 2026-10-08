@@ -910,6 +910,12 @@ def nlp_command(text: str, directory: Path, execute: bool, verbose: bool):
 
 def main():
     """Main entry point — if first arg is a path, run 'scan <path> --fix'."""
+    try:
+        from sumd.autoupdate import check_for_updates
+        check_for_updates("sumd")
+    except Exception:
+        pass
+
     import sys as _sys
 
     args = _sys.argv[1:]

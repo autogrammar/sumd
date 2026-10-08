@@ -1,0 +1,123 @@
+{
+  "schema": "new-project.intent/v3",
+  "ticket": "ticket-002",
+  "summary": "add autoupdate support and bounded quality repair",
+  "workstream": "integration",
+  "classification": {
+    "kind": "SERVICE",
+    "priority": "P2",
+    "origin": "health"
+  },
+  "allowedPaths": [
+    ".governance/manifest.json",
+    ".governance/manifest.lock.json",
+    "project/TICKETS.md",
+    "project/ticket-001/README.md",
+    "project/ticket-002/README.md",
+    "project/ticket-002/intent.json",
+    "pyqual.yaml",
+    "sumd/autoupdate.py",
+    "sumd/cli.py",
+    "sumd/cli_scan.py",
+    "sumd/extractor.py",
+    "sumd/toon_parser.py",
+    "sumd/validator.py"
+  ],
+  "forbiddenPaths": [
+    "project/ticket-*/user-*.md"
+  ],
+  "stacks": [],
+  "dependsOn": [],
+  "conflictsWith": [],
+  "integrationTicket": "ticket-002",
+  "delivery": {
+    "acceptedBaseSha": "687877a4459c901d7bd3eeceba1cd42e8e955bda",
+    "targetBranch": "main",
+    "outcome": "Add non-blocking autoupdate notices and bounded quality/performance fixes for the existing pull request.",
+    "nonGoals": [
+      "No branch publication, merge, approval, force-push or main modification by the model turn",
+      "No broad repository verification or todo2code compare-workspace during the model turn"
+    ],
+    "complexity": "L",
+    "estimatedMinutes": 60,
+    "budgets": {
+      "maxImplementationFiles": 15,
+      "maxAffectedComponents": 3,
+      "maxPublicInterfaceChanges": 1,
+      "maxRuntimeDependencies": 0
+    },
+    "architecture": {
+      "status": "accepted",
+      "decision": "Route the frozen PR diff and bounded repair delta through the manifest-declared integration workstream so shared governance and application paths have a single active owner.",
+      "components": [
+        {
+          "name": "cli-autoupdate",
+          "paths": [
+            "sumd/autoupdate.py",
+            "sumd/cli.py"
+          ]
+        },
+        {
+          "name": "scan-quality",
+          "paths": [
+            "sumd/cli_scan.py",
+            "sumd/extractor.py",
+            "sumd/toon_parser.py",
+            "sumd/validator.py"
+          ]
+        },
+        {
+          "name": "governance-ticketing",
+          "paths": [
+            "project/TICKETS.md",
+            ".governance/manifest.json",
+            ".governance/manifest.lock.json",
+            "project/ticket-001/README.md",
+            "project/ticket-002/README.md",
+            "project/ticket-002/intent.json",
+            "pyqual.yaml"
+          ]
+        }
+      ],
+      "responsibilityChanges": false,
+      "interfaceChanges": [
+        "sumd CLI startup may emit a cached update notice on stderr and may spawn a detached PyPI check outside CI."
+      ],
+      "dataChanges": [
+        {
+          "kind": "component-local-state",
+          "component": "cli-autoupdate",
+          "description": "A per-user cache file records the last PyPI check and latest observed version."
+        }
+      ],
+      "ui": {
+        "impact": "none",
+        "states": [],
+        "evidence": []
+      },
+      "rollback": "Revert the ticket-002 PR diff."
+    },
+    "runtimeDependencies": [],
+    "validation": [
+      {
+        "criterion": "AC-02",
+        "commands": [
+          "PYTHONDONTWRITEBYTECODE=1 python3 -m pyqual run",
+          "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTEST_ADDOPTS='-p no:wellmanifest_governance' python3 -m pytest tests/test_cli_helpers.py tests/test_cli.py tests/test_extractor.py tests/test_parser.py tests/test_pipeline.py tests/test_sections.py tests/test_statement.py -q"
+        ],
+        "evidence": "Focused repository tests run locally during the model turn; the trusted runner performs the authoritative target gate once afterward."
+      },
+      {
+        "criterion": "AC-03",
+        "commands": [
+          "todo2code",
+          "ticket2dsl",
+          "code2dsl",
+          "docs2dsl",
+          "service2dsl"
+        ],
+        "evidence": "Projection commands were checked without running broad compare-workspace; the commands are absent from this checkout and no repository-local projection scripts are present."
+      }
+    ]
+  }
+}

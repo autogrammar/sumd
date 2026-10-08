@@ -162,9 +162,10 @@ def extract_testql_scenarios(proj_dir: Path) -> list[dict[str, Any]]:
         collected[f.name] = f
 
     # 3. nested <pkg>/scenarios/**/*.testql.toon.yaml
-    pkg_dir = proj_dir / proj_dir.name
-    for f in sorted(pkg_dir.rglob("*.testql.toon.yaml")):
-        collected[f.name] = f
+    scenarios_dir = proj_dir / proj_dir.name / "scenarios"
+    if scenarios_dir.is_dir():
+        for f in sorted(scenarios_dir.glob("*.testql.toon.yaml")):
+            collected[f.name] = f
 
     scenarios = []
     for f in sorted(collected.values(), key=lambda p: p.name):

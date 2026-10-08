@@ -100,7 +100,8 @@
     "scripts/install-agent-hosts.sh": "19fb8fa511f9fd0cef41bdcfa244bc9dbee43d1175148161ca1d652060627482",
     "scripts/runtime.sh": "27ec7c0ff9ba3e16be5438ce2fd938a0e1dd34cc3a3627bf97155a83f4304306",
     "wellmanifest_governance.py": "af769204cbcf081e850b4e79dfeae0cd0deda34f555e9b1b9a3e0c3122ba6e17",
-    "worktree-guard.yaml": "bea3d3cda9bd764f9e79b975da8f5360df894fdc04fca0407def88ebd49111b7"
+    "worktree-guard.yaml": "bea3d3cda9bd764f9e79b975da8f5360df894fdc04fca0407def88ebd49111b7",
+    ".governance/manifest.json": "468d3e65825ceb9082dcf22f2585a61fbce22e6379b0e66d856f8a15ed04970d"
   },
   "schema": "new-project.lock/v1",
   "standard": {
