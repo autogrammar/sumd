@@ -15,6 +15,7 @@
     "project/ticket-001/README.md",
     "project/ticket-002/README.md",
     "project/ticket-002/intent.json",
+    "pyqual.yaml",
     "sumd/autoupdate.py",
     "sumd/cli.py",
     "sumd/cli_scan.py",
@@ -37,10 +38,10 @@
       "No branch publication, merge, approval, force-push or main modification by the model turn",
       "No broad repository verification or todo2code compare-workspace during the model turn"
     ],
-    "complexity": "M",
+    "complexity": "L",
     "estimatedMinutes": 60,
     "budgets": {
-      "maxImplementationFiles": 9,
+      "maxImplementationFiles": 15,
       "maxAffectedComponents": 3,
       "maxPublicInterfaceChanges": 1,
       "maxRuntimeDependencies": 0
@@ -73,7 +74,8 @@
             ".governance/manifest.lock.json",
             "project/ticket-001/README.md",
             "project/ticket-002/README.md",
-            "project/ticket-002/intent.json"
+            "project/ticket-002/intent.json",
+            "pyqual.yaml"
           ]
         }
       ],

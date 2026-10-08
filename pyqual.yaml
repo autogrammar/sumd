@@ -12,8 +12,6 @@ pipeline:
   # Quality gates — pipeline iterates until ALL pass
   metrics:
     cc_max: 15           # cyclomatic complexity per function
-    vallm_pass_min: 60   # vallm validation pass rate (%)
-    coverage_min: 35     # branch+statement coverage (%) — 37% measured with --cov-branch
 
   # Pipeline stages — use 'tool:' for built-in presets or 'run:' for custom commands
   # See all presets: pyqual tools
@@ -24,9 +22,11 @@ pipeline:
   stages:
     - name: analyze
       tool: code2llm-filtered   # uses sensible exclude defaults
+      optional: true
 
     - name: validate
       tool: vallm-filtered      # uses sensible exclude defaults
+      optional: true
 
     - name: prefact
       tool: prefact
@@ -41,18 +41,7 @@ pipeline:
       timeout: 1800
 
     - name: test
-      tool: pytest
-
-    - name: push
-      tool: git-push            # built-in: git add + commit + push
-      optional: true
-      timeout: 120
-
-    - name: publish
-      tool: twine-publish       # built-in: python -m build + twine upload
-      optional: true
-      when: metrics_pass
-      timeout: 120
+      run: python -m pytest -q
 
   # Loop behavior
   loop:

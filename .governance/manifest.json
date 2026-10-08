@@ -104,6 +104,7 @@
           "Cargo.toml",
           "Cargo.lock",
           "pom.xml",
+          "pyqual.yaml",
           "docs/**",
           "operations/**",
           "events/**",
