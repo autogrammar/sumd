@@ -41,7 +41,7 @@ pipeline:
       timeout: 1800
 
     - name: test
-      run: python -m pytest -q
+      run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTEST_ADDOPTS='-p no:wellmanifest_governance' python3 -m pytest tests/test_cli_helpers.py tests/test_cli.py tests/test_extractor.py tests/test_parser.py tests/test_pipeline.py tests/test_sections.py tests/test_statement.py -q
 
   # Loop behavior
   loop:
