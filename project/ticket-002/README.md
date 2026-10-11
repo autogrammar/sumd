@@ -2,8 +2,8 @@
 
 - **ID**: ticket-002
 - **Owner**: trusted-runner:PLF-17249
-- **Status**: IN_PROGRESS
-- **Workflow state**: EDIT
+- **Status**: DONE
+- **Workflow state**: DONE
 - **Created**: 2026-10-07
 
 ## Goal and scope
