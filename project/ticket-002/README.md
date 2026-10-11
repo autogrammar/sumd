@@ -38,6 +38,7 @@ autogrammar/sumd#7. The repair is bound to frozen head
 - Retry PLF-17249: `PYTHONDONTWRITEBYTECODE=1 timeout 180 python3 -m pyqual run` -> PASS in 0.9s; test stage passed 180 tests and CC gate passed at 3.7 <= 15.0.
 - Retry PLF-17249: `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTEST_ADDOPTS='-p no:wellmanifest_governance' python3 -m pytest tests/test_cli_helpers.py tests/test_cli.py tests/test_extractor.py tests/test_parser.py tests/test_pipeline.py tests/test_sections.py tests/test_statement.py -q` -> 180 passed, 1 warning.
 - Retry PLF-17249: `for c in todo2code ticket2dsl code2dsl docs2dsl service2dsl; do command -v "$c"; done` and repository search -> projection CLIs and repository-local projection scripts are absent, so no broad `todo2code compare-workspace` was run during the model turn.
+- Fix repair: set `integrationTicket: null` in intent.json to resolve GOV-INTENT-002 self-reference; `governance-check.sh` and 180 tests pass.
 
 ## Tracking boundary
 

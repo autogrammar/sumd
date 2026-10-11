@@ -29,7 +29,7 @@
   "stacks": [],
   "dependsOn": [],
   "conflictsWith": [],
-  "integrationTicket": "ticket-002",
+  "integrationTicket": null,
   "delivery": {
     "acceptedBaseSha": "687877a4459c901d7bd3eeceba1cd42e8e955bda",
     "targetBranch": "main",

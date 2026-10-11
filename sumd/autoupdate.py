@@ -38,7 +38,7 @@ def _is_newer(latest: str, current: str) -> bool:
     except Exception:
         pass
 
-    def parse_simple(v: str) -> tuple:
+    def parse_simple(v: str) -> tuple[int, ...]:
         nums = []
         for part in v.split("."):
             digits = ""
