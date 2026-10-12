@@ -557,6 +557,14 @@ _IGNORE_DIRS = {
     ".sumd-tools",
     "project",
     "testql-scenarios",
+    "managed_components",
+    "vendor",
+    ".pytest_tmp",
+    ".test-cache",
+    ".code2llm_cache",
+    ".playwright-browsers",
+    ".dev-data",
+    ".dockuri",
 }
 
 # Files to include in M[] (source code only, not docs/config/data)
