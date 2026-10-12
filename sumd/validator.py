@@ -290,8 +290,11 @@ def _check_unclosed_fences(lines: list[str], source: str) -> list[str]:
 
 
 def _strip_fenced_code_blocks(content: str) -> str:
-    """Remove fenced code blocks before markdown link validation."""
-    return re.sub(r"```[\s\S]*?```", "", content)
+    """Remove fenced code blocks and inline code spans before markdown link validation."""
+    content = re.sub(r"```[\s\S]*?```", "", content)
+    content = re.sub(r"~~~[\s\S]*?~~~", "", content)
+    content = re.sub(r"`[^`\n]+`", "", content)
+    return content
 
 
 def _check_empty_links(content: str, source: str) -> list[str]:
