@@ -36,6 +36,7 @@
     "workstreams": {
       "application": {
         "ownedPaths": [
+          "sumd/**",
           "src/**",
           "app/**",
           "lib/**",
