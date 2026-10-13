@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import fnmatch
+import functools
 import os
 import re
 from datetime import date
@@ -565,6 +566,9 @@ _IGNORE_DIRS = {
     ".playwright-browsers",
     ".dev-data",
     ".dockuri",
+    "c2004",
+    "c2004-git-backup",
+    "workshop",
 }
 
 # Files to include in M[] (source code only, not docs/config/data)
@@ -620,14 +624,28 @@ def _cc_estimate(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
     return cc
 
 
+_RADON_CC_VISIT = None
+_RADON_CHECKED = False
+
+
 def _try_radon_cc(src: str) -> dict[str, int]:
     """Return {func_name: cc} using radon if available, else empty."""
-    try:
-        from radon.complexity import cc_visit  # type: ignore
+    global _RADON_CC_VISIT, _RADON_CHECKED
+    if not _RADON_CHECKED:
+        try:
+            from radon.complexity import cc_visit  # type: ignore
 
-        return {r.name: r.complexity for r in cc_visit(src)}
-    except Exception:
-        return {}
+            _RADON_CC_VISIT = cc_visit
+        except Exception:
+            _RADON_CC_VISIT = None
+        _RADON_CHECKED = True
+
+    if _RADON_CC_VISIT is not None:
+        try:
+            return {r.name: r.complexity for r in _RADON_CC_VISIT(src)}
+        except Exception:
+            return {}
+    return {}
 
 
 def _analyse_py_top_funcs(
@@ -694,6 +712,11 @@ def _analyse_py_module(path: Path) -> dict[str, Any]:
     }
 
 
+def _analyse_py_module_worker(path_str: str) -> dict[str, Any]:
+    """Top-level worker function for parallel module analysis."""
+    return _analyse_py_module(Path(path_str))
+
+
 def _parse_ignore_file(ignore_path: Path) -> list[str]:
     """Parse .gitignore or .sumdignore file and return list of patterns."""
     if not ignore_path.exists():
@@ -750,29 +773,43 @@ def _match_regular_pattern(path: Path, path_str: str, pattern: str) -> bool:
     return False
 
 
-def _path_matches_pattern(path: Path, pattern: str) -> bool:
-    """Check if a path matches a gitignore-style pattern."""
-    path_str = str(path)
-
-    # Handle negation patterns (starting with !)
+@functools.lru_cache(maxsize=16384)
+def _path_matches_pattern_cached(path_str: str, pattern: str) -> bool:
+    """Cached pattern matching on normalized POSIX path string."""
     if pattern.startswith("!"):
-        # This is a negation - we handle it at the caller level
         return False
 
-    # Handle directory patterns (ending with /)
+    parts = path_str.split("/")
     if pattern.endswith("/"):
-        return _match_dir_pattern(path, path_str, pattern[:-1])
+        dir_pat = pattern[:-1]
+        globs = (dir_pat, dir_pat + "/*", "*/" + dir_pat, "*/" + dir_pat + "/*")
+        if any(fnmatch.fnmatch(path_str, g) for g in globs):
+            return True
+        return any(fnmatch.fnmatch(part, dir_pat) for part in parts)
 
-    # Handle absolute patterns (starting with /)
     if pattern.startswith("/"):
-        return _match_absolute_pattern(path_str, pattern)
+        pat = pattern[1:]
+        return fnmatch.fnmatch(path_str, pat) or fnmatch.fnmatch(path_str, pat + "/*")
 
-    # Handle recursive patterns (starting with **/)
     if pattern.startswith("**/"):
-        return _match_recursive_pattern(path_str, pattern)
+        pat = pattern[3:]
+        return (
+            fnmatch.fnmatch(path_str, pat)
+            or fnmatch.fnmatch(path_str, "*/" + pat)
+            or fnmatch.fnmatch(path_str, "**/" + pat)
+        )
 
-    # Regular pattern
-    return _match_regular_pattern(path, path_str, pattern)
+    if fnmatch.fnmatch(path_str, pattern) or fnmatch.fnmatch(path_str, "*/" + pattern):
+        return True
+    for part in parts:
+        if fnmatch.fnmatch(part, pattern):
+            return True
+    return False
+
+
+def _path_matches_pattern(path: Path, pattern: str) -> bool:
+    """Check if a path matches a gitignore-style pattern."""
+    return _path_matches_pattern_cached(str(path).replace("\\", "/"), pattern)
 
 
 def _is_path_ignored(path: Path, proj_dir: Path, ignore_patterns: list[str]) -> bool:
@@ -786,6 +823,8 @@ def _is_path_ignored(path: Path, proj_dir: Path, ignore_patterns: list[str]) -> 
     except ValueError:
         # If path is not relative to proj_dir, treat it as not ignored
         return False
+
+    rel_str = str(rel_path).replace("\\", "/")
     
     # First check for negation patterns, then for regular patterns
     is_ignored = False
@@ -793,11 +832,11 @@ def _is_path_ignored(path: Path, proj_dir: Path, ignore_patterns: list[str]) -> 
     for pattern in ignore_patterns:
         if pattern.startswith("!"):
             # Negation pattern - unignore if it matches
-            if _path_matches_pattern(rel_path, pattern[1:]):
+            if _path_matches_pattern_cached(rel_str, pattern[1:]):
                 is_ignored = False
         else:
             # Regular ignore pattern
-            if _path_matches_pattern(rel_path, pattern):
+            if _path_matches_pattern_cached(rel_str, pattern):
                 is_ignored = True
     
     return is_ignored
@@ -813,6 +852,9 @@ def _is_map_ignored_path(p: Path) -> bool:
 
 def _should_include_map_file(f: Path, proj_dir: Path, all_ignore_patterns: list[str]) -> str | None:
     """Return language string if file should be included, else None."""
+    lang = _lang_of(f)
+    if lang == "other" or lang not in _SOURCE_LANGS:
+        return None
     try:
         rel_path = f.relative_to(proj_dir)
     except ValueError:
@@ -820,9 +862,6 @@ def _should_include_map_file(f: Path, proj_dir: Path, all_ignore_patterns: list[
     if _is_map_ignored_path(rel_path):
         return None
     if _is_path_ignored(f, proj_dir, all_ignore_patterns):
-        return None
-    lang = _lang_of(f)
-    if lang == "other" or lang not in _SOURCE_LANGS:
         return None
     return lang
 
@@ -846,6 +885,8 @@ def _collect_map_files(
         current_dir = Path(dirpath)
         kept = []
         for d in dirnames:
+            if d in _IGNORE_DIRS or d.endswith(".egg-info") or (d.startswith(".") and d not in (".", "..")):
+                continue
             dir_path = current_dir / d
             rel_dir = dir_path.relative_to(proj_dir)
             if _is_map_ignored_path(rel_dir) or _is_path_ignored(dir_path, proj_dir, all_ignore_patterns):
@@ -853,7 +894,9 @@ def _collect_map_files(
             kept.append(d)
         dirnames[:] = kept
         for filename in filenames:
-            all_files.append(current_dir / filename)
+            ext = os.path.splitext(filename)[1].lower()
+            if ext in _LANG_EXT and _LANG_EXT[ext] in _SOURCE_LANGS:
+                all_files.append(current_dir / filename)
 
     for f in sorted(all_files):
         lang = _should_include_map_file(f, proj_dir, all_ignore_patterns)
@@ -879,10 +922,35 @@ def _render_map_detail(
     all_classes: list[dict] = []
     total_cls = 0
 
-    for rel, lines, lang in modules:
-        if lang != "python":
-            continue
-        info = _analyse_py_module(proj_dir / rel)
+    py_items = [rel for rel, lines, lang in modules if lang == "python"]
+    if not py_items:
+        return py_modules, all_funcs, all_classes, total_cls
+
+    info_map: dict[Path, dict[str, Any]] = {}
+    if len(py_items) > 3:
+        try:
+            import concurrent.futures
+            max_workers = min(16, os.cpu_count() or 4)
+            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+                full_paths = [str(proj_dir / rel) for rel in py_items]
+                results = list(
+                    executor.map(
+                        _analyse_py_module_worker,
+                        full_paths,
+                        chunksize=max(1, len(full_paths) // (max_workers * 2)),
+                    )
+                )
+                for rel, info in zip(py_items, results):
+                    info_map[rel] = info
+        except Exception:
+            for rel in py_items:
+                info_map[rel] = _analyse_py_module(proj_dir / rel)
+    else:
+        for rel in py_items:
+            info_map[rel] = _analyse_py_module(proj_dir / rel)
+
+    for rel in py_items:
+        info = info_map[rel]
         py_modules.append((rel, info))
         for f in info["funcs"]:
             all_funcs.append({**f, "mod": str(rel)})
