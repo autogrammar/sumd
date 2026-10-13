@@ -780,8 +780,12 @@ def _path_matches_pattern_cached(path_str: str, pattern: str) -> bool:
         return False
 
     parts = path_str.split("/")
+    has_wildcard = any(c in pattern for c in ("*", "?", "["))
+
     if pattern.endswith("/"):
         dir_pat = pattern[:-1]
+        if not has_wildcard:
+            return dir_pat in parts
         globs = (dir_pat, dir_pat + "/*", "*/" + dir_pat, "*/" + dir_pat + "/*")
         if any(fnmatch.fnmatch(path_str, g) for g in globs):
             return True
@@ -789,15 +793,24 @@ def _path_matches_pattern_cached(path_str: str, pattern: str) -> bool:
 
     if pattern.startswith("/"):
         pat = pattern[1:]
+        if not has_wildcard:
+            return path_str == pat or path_str.startswith(pat + "/")
         return fnmatch.fnmatch(path_str, pat) or fnmatch.fnmatch(path_str, pat + "/*")
 
     if pattern.startswith("**/"):
         pat = pattern[3:]
+        if not has_wildcard:
+            return path_str == pat or path_str.endswith("/" + pat) or ("/" + pat + "/") in path_str
         return (
             fnmatch.fnmatch(path_str, pat)
             or fnmatch.fnmatch(path_str, "*/" + pat)
             or fnmatch.fnmatch(path_str, "**/" + pat)
         )
+
+    if not has_wildcard:
+        if "/" in pattern:
+            return path_str == pattern or path_str.endswith("/" + pattern) or ("/" + pattern + "/") in path_str
+        return pattern in parts
 
     if fnmatch.fnmatch(path_str, pattern) or fnmatch.fnmatch(path_str, "*/" + pattern):
         return True
@@ -825,6 +838,13 @@ def _is_path_ignored(path: Path, proj_dir: Path, ignore_patterns: list[str]) -> 
         return False
 
     rel_str = str(rel_path).replace("\\", "/")
+
+    has_negations = any(p.startswith("!") for p in ignore_patterns)
+    if not has_negations:
+        for pattern in ignore_patterns:
+            if _path_matches_pattern_cached(rel_str, pattern):
+                return True
+        return False
     
     # First check for negation patterns, then for regular patterns
     is_ignored = False
