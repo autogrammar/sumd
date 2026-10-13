@@ -137,7 +137,6 @@ def _resolve_path(path: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
-@server.list_tools()
 async def list_tools() -> list[types.Tool]:
     return [
         types.Tool(
@@ -384,6 +383,10 @@ async def list_tools() -> list[types.Tool]:
             },
         ),
     ]
+
+
+if hasattr(server, "list_tools"):
+    list_tools = server.list_tools()(list_tools)
 
 
 # ---------------------------------------------------------------------------
@@ -697,7 +700,6 @@ _TOOL_HANDLERS = {
 # ---------------------------------------------------------------------------
 
 
-@server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextContent]:
     try:
         handler = _TOOL_HANDLERS.get(name)
@@ -706,6 +708,11 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[types.TextCont
         return await handler(arguments)
     except Exception as exc:
         return [types.TextContent(type="text", text=f"Error: {exc}")]
+
+
+if hasattr(server, "call_tool"):
+    call_tool = server.call_tool()(call_tool)
+
 
 
 # ---------------------------------------------------------------------------

@@ -483,7 +483,11 @@ def _load_prolog_db(proj_dir: Path):
     from sumd.extractor import generate_project_logic
     from sumd.prolog_engine import PythonPrologDB
 
-    facts_text = generate_project_logic(proj_dir)
+    logic_path = proj_dir / "project" / "logic.pl"
+    if logic_path.exists():
+        facts_text = logic_path.read_text(encoding="utf-8", errors="ignore")
+    else:
+        facts_text = generate_project_logic(proj_dir)
     filtered_facts = _filter_rule_relevant_facts(facts_text)
     rules_path = Path(__file__).parent / "rules.pl"
     if not rules_path.exists():

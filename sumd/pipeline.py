@@ -81,18 +81,31 @@ def _refresh_map_toon(proj_dir: Path) -> None:
     Silently skips if generation fails.
     """
     try:
-        content = generate_map_toon(proj_dir)
-        if content:
-            map_path = proj_dir / "project" / "map.toon.yaml"
-            regresses = False
-            if map_path.exists():
-                existing = map_path.read_text(encoding="utf-8", errors="ignore")
-                regresses = _is_code2llm_owned_map(existing) or (
-                    _map_module_count(existing) > _map_module_count(content)
-                )
-            if not regresses:
-                map_path.parent.mkdir(parents=True, exist_ok=True)
-                map_path.write_text(content, encoding="utf-8")
+        map_path = proj_dir / "project" / "map.toon.yaml"
+        skip_generate = False
+        existing = ""
+        if map_path.exists():
+            try:
+                with map_path.open("r", encoding="utf-8", errors="ignore") as f:
+                    header = f.read(2048)
+                if _is_code2llm_owned_map(header):
+                    skip_generate = True
+                else:
+                    existing = map_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                pass
+
+        if not skip_generate:
+            content = generate_map_toon(proj_dir)
+            if content:
+                regresses = False
+                if existing:
+                    regresses = _is_code2llm_owned_map(existing) or (
+                        _map_module_count(existing) > _map_module_count(content)
+                    )
+                if not regresses:
+                    map_path.parent.mkdir(parents=True, exist_ok=True)
+                    map_path.write_text(content, encoding="utf-8")
     except Exception:  # noqa: BLE001
         pass
 

@@ -134,7 +134,8 @@ class TestListTools:
     def test_each_tool_has_input_schema(self):
         tools = run(list_tools())
         for t in tools:
-            assert t.inputSchema is not None
+            schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", None)
+            assert schema is not None
 
 
 # ---------------------------------------------------------------------------
