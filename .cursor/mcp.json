@@ -1,15 +1,15 @@
 {
   "mcpServers": {
     "koru": {
-      "command": "/home/tom/github/semcod/koru/.venv/bin/koru",
+      "command": "koru",
       "args": [
         "mcp-serve"
       ],
       "transport": "stdio",
       "env": {
-        "ENV2LLM_CONTEXT": "/home/tom/github/semcod/sumd/.nlp2dsl/registry/environment.doql.less",
-        "NLP2DSL_DOQL_CONTEXT": "/home/tom/github/semcod/sumd/.nlp2dsl/registry/environment.doql.less",
-        "KORU_PROJECT_ROOT": "/home/tom/github/semcod/sumd"
+        "ENV2LLM_CONTEXT": "${workspaceFolder}/.nlp2dsl/registry/environment.doql.less",
+        "NLP2DSL_DOQL_CONTEXT": "${workspaceFolder}/.nlp2dsl/registry/environment.doql.less",
+        "KORU_PROJECT_ROOT": "${workspaceFolder}"
       }
     }
   }
