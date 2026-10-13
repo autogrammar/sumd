@@ -30,6 +30,11 @@ _SKIP_DIRS = {
     "twinerd-bench-results",
     "benchmarks",
     "bench-results",
+    "c2004",
+    "c2004-git-backup",
+    "workshop",
+    "managed_components",
+    "vendor",
 }
 
 _PROJECT_MARKER_FILES: frozenset[str] = frozenset({
