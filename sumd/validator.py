@@ -341,27 +341,163 @@ def _is_project_root_for_validation(proj_dir: Path) -> bool:
     )
 
 
+_RULE_RELEVANT_PREDICATES: frozenset[str] = frozenset({
+    "sumd_workflow",
+    "sumd_workflow_step",
+    "sumd_deploy_target",
+    "sumd_deploy_compose_file",
+    "sumd_quality_workflow",
+    "sumd_gate",
+    "sumd_declared_file",
+    "project_file",
+    "makefile_target",
+    "taskfile_task",
+})
+
+
+def _filter_rule_relevant_facts(facts_text: str) -> str:
+    """Filter generated logic facts down to only those relevant to architectural rules.
+
+    This avoids loading thousands of unrelated facts (functions, classes, dependencies,
+    env vars, non-declared files) into the pure Python resolution database.
+    """
+    declared_files: set[str] = set()
+    for m in re.finditer(r"^sumd_declared_file\('([^']+)'", facts_text, re.MULTILINE):
+        declared_files.add(m.group(1))
+
+    relevant_lines: list[str] = []
+    for line in facts_text.splitlines():
+        line_s = line.strip()
+        if not line_s or line_s.startswith("%"):
+            continue
+        functor = line_s.split("(", 1)[0]
+        if functor in _RULE_RELEVANT_PREDICATES:
+            if functor == "project_file":
+                if not declared_files:
+                    continue
+                pm = re.match(r"^project_file\('([^']+)'", line_s)
+                if pm and pm.group(1) not in declared_files:
+                    continue
+            relevant_lines.append(line_s)
+    return "\n".join(relevant_lines)
+
+
+class IndexedPythonPrologEngine:
+    """Functor-indexed Prolog engine with fast-path ground fact resolution."""
+
+    def __init__(self, db):
+        self.db = db
+        self._var_counter = 0
+        from collections import defaultdict
+        self._rules_by_op = defaultdict(list)
+        from sumd.prolog_engine import Term, Variable
+        self._Term = Term
+        self._Variable = Variable
+        for rule in db.rules:
+            op = rule.head.op if isinstance(rule.head, Term) else str(rule.head)
+            self._rules_by_op[op].append(rule)
+
+    def query(self, goal_str: str) -> list[dict]:
+        from sumd.prolog_engine import to_term, deep_resolve
+        goal = to_term(goal_str)
+        results = []
+        goal_vars = self._find_vars(goal)
+
+        for subst in self._resolve([goal], {}):
+            res = {}
+            for gv in goal_vars:
+                val = deep_resolve(gv, subst)
+                if isinstance(val, self._Term):
+                    res[gv.name] = str(val)
+                elif isinstance(val, self._Variable):
+                    res[gv.name] = val.name
+                else:
+                    res[gv.name] = val
+            results.append(res)
+        return results
+
+    def _find_vars(self, term) -> list:
+        vars_set = set()
+        def collect(t):
+            if isinstance(t, self._Variable):
+                vars_set.add(t)
+            elif isinstance(t, self._Term):
+                for arg in t.args:
+                    collect(arg)
+        collect(term)
+        return list(vars_set)
+
+    def _resolve_negation(self, first, rest, subst):
+        inner_goal = first.args[0]
+        if not list(self._resolve([inner_goal], subst)):
+            yield from self._resolve(rest, subst)
+
+    def _resolve_inequality(self, first, rest, subst):
+        from sumd.prolog_engine import resolve_val
+        left = resolve_val(first.args[0], subst)
+        right = resolve_val(first.args[1], subst)
+        left_str = str(left) if not isinstance(left, self._Variable) else left
+        right_str = str(right) if not isinstance(right, self._Variable) else right
+        if left_str != right_str:
+            yield from self._resolve(rest, subst)
+
+    def _resolve_rule_step(self, first, rest, rule, subst):
+        from sumd.prolog_engine import unify, rename_variables
+        # Ground fact fast-path: no variables in head and no body -> no renaming needed
+        if not rule.body and not self._find_vars(rule.head):
+            new_subst = unify(first, rule.head, subst)
+            if new_subst is not None:
+                yield from self._resolve(rest, new_subst)
+            return
+
+        renamed_rule = rename_variables(rule, self._var_counter)
+        new_subst = unify(first, renamed_rule.head, subst)
+        if new_subst is not None:
+            yield from self._resolve(renamed_rule.body + rest, new_subst)
+
+    def _resolve(self, goals, subst):
+        if not goals:
+            yield subst
+            return
+
+        first, rest = goals[0], goals[1:]
+        is_term = isinstance(first, self._Term)
+
+        if is_term and first.op in ("\\+", "not"):
+            yield from self._resolve_negation(first, rest, subst)
+            return
+
+        if is_term and first.op in ("\\=", "\\\\=", "\\\\==", "\\="):
+            yield from self._resolve_inequality(first, rest, subst)
+            return
+
+        self._var_counter += 1
+        op = first.op if is_term else str(first)
+        candidate_rules = self._rules_by_op.get(op, [])
+        for rule in candidate_rules:
+            yield from self._resolve_rule_step(first, rest, rule, subst)
+
+
 def _load_prolog_db(proj_dir: Path):
     """Build and return a loaded PrologDB or None if rules file is missing."""
     from sumd.extractor import generate_project_logic
     from sumd.prolog_engine import PythonPrologDB
 
     facts_text = generate_project_logic(proj_dir)
+    filtered_facts = _filter_rule_relevant_facts(facts_text)
     rules_path = Path(__file__).parent / "rules.pl"
     if not rules_path.exists():
         return None
     rules_text = rules_path.read_text(encoding="utf-8")
     db = PythonPrologDB()
-    db.parse_and_load(facts_text)
+    db.parse_and_load(filtered_facts)
     db.parse_and_load(rules_text)
     return db
 
 
 def _query_prolog_violations(db) -> list[str]:
     """Run invalid(Error) query and return formatted violation strings."""
-    from sumd.prolog_engine import PythonPrologEngine
-
-    engine = PythonPrologEngine(db)
+    engine = IndexedPythonPrologEngine(db)
     return sorted(
         f"architecture inconsistency: {r['Error']}"
         for r in engine.query("invalid(Error)")
