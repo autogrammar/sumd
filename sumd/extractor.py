@@ -569,6 +569,7 @@ _IGNORE_DIRS = {
     "c2004",
     "c2004-git-backup",
     "workshop",
+    "maskservice.local",
 }
 
 # Files to include in M[] (source code only, not docs/config/data)
@@ -825,41 +826,110 @@ def _path_matches_pattern(path: Path, pattern: str) -> bool:
     return _path_matches_pattern_cached(str(path).replace("\\", "/"), pattern)
 
 
+class _FastIgnoreMatcher:
+    """Fast pre-partitioned gitignore/sumdignore matcher."""
+
+    def __init__(self, patterns: list[str]) -> None:
+        self.patterns = patterns
+        self.has_negations = any(p.startswith("!") for p in patterns)
+        self.literal_dirs: set[str] = set()
+        self.literal_names: set[str] = set()
+        self.literal_exts: set[str] = set()
+        self.exact_rel_paths: set[str] = set()
+        self.prefix_paths: list[str] = []
+        self.other_patterns: list[str] = []
+
+        if not self.has_negations:
+            for pat in patterns:
+                if not pat or pat.startswith("#"):
+                    continue
+                has_wildcard = any(c in pat for c in ("*", "?", "["))
+                if not has_wildcard:
+                    if pat.endswith("/"):
+                        inner = pat[:-1]
+                        if "/" not in inner:
+                            self.literal_dirs.add(inner)
+                        else:
+                            self.prefix_paths.append(inner + "/")
+                            self.exact_rel_paths.add(inner)
+                    elif pat.startswith("/"):
+                        inner = pat[1:]
+                        self.exact_rel_paths.add(inner)
+                        self.prefix_paths.append(inner + "/")
+                    elif "/" in pat:
+                        self.exact_rel_paths.add(pat)
+                        self.prefix_paths.append(pat + "/")
+                    else:
+                        self.literal_names.add(pat)
+                        self.literal_dirs.add(pat)
+                elif pat.startswith("*.") and "/" not in pat and not any(c in pat[2:] for c in ("*", "?", "[")):
+                    self.literal_exts.add(pat[1:])  # e.g. ".pyc"
+                else:
+                    self.other_patterns.append(pat)
+
+    def matches(self, path: Path, proj_dir: Path) -> bool:
+        try:
+            rel_path = path.relative_to(proj_dir)
+        except ValueError:
+            return False
+
+        rel_str = str(rel_path).replace("\\", "/")
+        if not rel_str or rel_str == ".":
+            return False
+
+        if self.has_negations:
+            is_ignored = False
+            for pattern in self.patterns:
+                if pattern.startswith("!"):
+                    if _path_matches_pattern_cached(rel_str, pattern[1:]):
+                        is_ignored = False
+                else:
+                    if _path_matches_pattern_cached(rel_str, pattern):
+                        is_ignored = True
+            return is_ignored
+
+        parts = rel_str.split("/")
+        # Check any directory segment
+        for p in parts[:-1]:
+            if p in self.literal_dirs:
+                return True
+
+        last = parts[-1]
+        if last in self.literal_names or last in self.literal_dirs:
+            return True
+
+        if self.literal_exts:
+            for ext in self.literal_exts:
+                if last.endswith(ext):
+                    return True
+
+        if self.exact_rel_paths and rel_str in self.exact_rel_paths:
+            return True
+
+        if self.prefix_paths:
+            rel_slash = rel_str + "/"
+            for pfx in self.prefix_paths:
+                if rel_str.startswith(pfx) or rel_slash.startswith(pfx):
+                    return True
+
+        if self.other_patterns:
+            for pat in self.other_patterns:
+                if _path_matches_pattern_cached(rel_str, pat):
+                    return True
+
+        return False
+
+
+@functools.lru_cache(maxsize=32)
+def _get_fast_ignore_matcher(patterns_tuple: tuple[str, ...]) -> _FastIgnoreMatcher:
+    return _FastIgnoreMatcher(list(patterns_tuple))
+
+
 def _is_path_ignored(path: Path, proj_dir: Path, ignore_patterns: list[str]) -> bool:
     """Check if a path should be ignored based on gitignore-style patterns."""
     if not ignore_patterns:
         return False
-    
-    # Convert to relative path for matching
-    try:
-        rel_path = path.relative_to(proj_dir)
-    except ValueError:
-        # If path is not relative to proj_dir, treat it as not ignored
-        return False
-
-    rel_str = str(rel_path).replace("\\", "/")
-
-    has_negations = any(p.startswith("!") for p in ignore_patterns)
-    if not has_negations:
-        for pattern in ignore_patterns:
-            if _path_matches_pattern_cached(rel_str, pattern):
-                return True
-        return False
-    
-    # First check for negation patterns, then for regular patterns
-    is_ignored = False
-    
-    for pattern in ignore_patterns:
-        if pattern.startswith("!"):
-            # Negation pattern - unignore if it matches
-            if _path_matches_pattern_cached(rel_str, pattern[1:]):
-                is_ignored = False
-        else:
-            # Regular ignore pattern
-            if _path_matches_pattern_cached(rel_str, pattern):
-                is_ignored = True
-    
-    return is_ignored
+    return _get_fast_ignore_matcher(tuple(ignore_patterns)).matches(path, proj_dir)
 
 
 def _is_map_ignored_path(p: Path) -> bool:
@@ -870,7 +940,9 @@ def _is_map_ignored_path(p: Path) -> bool:
     return False
 
 
-def _should_include_map_file(f: Path, proj_dir: Path, all_ignore_patterns: list[str]) -> str | None:
+def _should_include_map_file(
+    f: Path, proj_dir: Path, all_ignore_patterns: list[str], matcher: _FastIgnoreMatcher | None = None
+) -> str | None:
     """Return language string if file should be included, else None."""
     lang = _lang_of(f)
     if lang == "other" or lang not in _SOURCE_LANGS:
@@ -881,7 +953,10 @@ def _should_include_map_file(f: Path, proj_dir: Path, all_ignore_patterns: list[
         return None
     if _is_map_ignored_path(rel_path):
         return None
-    if _is_path_ignored(f, proj_dir, all_ignore_patterns):
+    if matcher is not None:
+        if matcher.matches(f, proj_dir):
+            return None
+    elif _is_path_ignored(f, proj_dir, all_ignore_patterns):
         return None
     return lang
 
@@ -897,6 +972,7 @@ def _collect_map_files(
     gitignore_patterns = _parse_ignore_file(proj_dir / ".gitignore")
     sumdignore_patterns = _parse_ignore_file(proj_dir / ".sumdignore")
     all_ignore_patterns = gitignore_patterns + sumdignore_patterns
+    matcher = _FastIgnoreMatcher(all_ignore_patterns) if all_ignore_patterns else None
 
     # Prune ignored directories before descending instead of walking the
     # full tree (including venv/node_modules) and filtering afterward.
@@ -909,7 +985,9 @@ def _collect_map_files(
                 continue
             dir_path = current_dir / d
             rel_dir = dir_path.relative_to(proj_dir)
-            if _is_map_ignored_path(rel_dir) or _is_path_ignored(dir_path, proj_dir, all_ignore_patterns):
+            if _is_map_ignored_path(rel_dir):
+                continue
+            if matcher and matcher.matches(dir_path, proj_dir):
                 continue
             kept.append(d)
         dirnames[:] = kept
@@ -919,7 +997,7 @@ def _collect_map_files(
                 all_files.append(current_dir / filename)
 
     for f in sorted(all_files):
-        lang = _should_include_map_file(f, proj_dir, all_ignore_patterns)
+        lang = _should_include_map_file(f, proj_dir, all_ignore_patterns, matcher=matcher)
         if not lang:
             continue
 
@@ -1090,10 +1168,13 @@ def _facts_project_metadata(proj_dir: Path) -> list[str]:
     ]
 
 
-def _facts_project_files(proj_dir: Path) -> list[str]:
+def _facts_project_files(
+    proj_dir: Path, modules: list[tuple[Path, int, str]] | None = None
+) -> list[str]:
     """Generate project file facts."""
     facts = ["% ── Project Files ────────────────────────────────────────"]
-    _lang_counts, modules = _collect_map_files(proj_dir)
+    if modules is None:
+        _lang_counts, modules = _collect_map_files(proj_dir)
     for rel_path, lines, lang in modules:
         rel_clean = str(rel_path).replace("'", "\\'")
         facts.append(f"project_file('{rel_clean}', {lines}, '{lang}').")
@@ -1101,9 +1182,12 @@ def _facts_project_files(proj_dir: Path) -> list[str]:
     return facts
 
 
-def _facts_python_analysis(proj_dir: Path) -> list[str]:
+def _facts_python_analysis(
+    proj_dir: Path, modules: list[tuple[Path, int, str]] | None = None
+) -> list[str]:
     """Generate Python function and class facts."""
-    _lang_counts, modules = _collect_map_files(proj_dir)
+    if modules is None:
+        _lang_counts, modules = _collect_map_files(proj_dir)
     _py_modules, all_funcs, all_classes, _total_cls = _render_map_detail(proj_dir, modules)
     facts = ["% ── Python Functions ─────────────────────────────────────"]
     for f in all_funcs:
@@ -1213,8 +1297,9 @@ def generate_project_logic(proj_dir: Path) -> str:
     proj_dir = proj_dir.resolve()
     facts: list[str] = []
     facts.extend(_facts_project_metadata(proj_dir))
-    facts.extend(_facts_project_files(proj_dir))
-    facts.extend(_facts_python_analysis(proj_dir))
+    _lang_counts, modules = _collect_map_files(proj_dir)
+    facts.extend(_facts_project_files(proj_dir, modules=modules))
+    facts.extend(_facts_python_analysis(proj_dir, modules=modules))
     facts.extend(_facts_dependencies(proj_dir))
     facts.extend(_facts_makefile(proj_dir))
     facts.extend(_facts_taskfile(proj_dir))
