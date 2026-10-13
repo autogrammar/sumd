@@ -119,7 +119,8 @@
           "sumd/cli_scan.py",
           "sumd/extractor.py",
           "sumd/toon_parser.py",
-          "sumd/validator.py"
+          "sumd/validator.py",
+          "mcp.json"
         ]
       },
       "interfaces": {
