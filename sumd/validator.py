@@ -480,8 +480,8 @@ class IndexedPythonPrologEngine:
 
 def _load_prolog_db(proj_dir: Path):
     """Build and return a loaded PrologDB or None if rules file is missing."""
-    from sumd.extractor import generate_project_logic
-    from sumd.prolog_engine import PythonPrologDB
+    from sumd.extractor import generate_project_logic, _extract_markpact_files
+    from sumd.prolog_engine import PythonPrologDB, Term
 
     logic_path = proj_dir / "project" / "logic.pl"
     if logic_path.exists():
@@ -489,12 +489,33 @@ def _load_prolog_db(proj_dir: Path):
     else:
         facts_text = generate_project_logic(proj_dir)
     filtered_facts = _filter_rule_relevant_facts(facts_text)
+    # Cached source facts do not establish current declared paths or existence.
+    filtered_facts = "\n".join(
+        line for line in filtered_facts.splitlines()
+        if not line.startswith(("project_file(", "sumd_declared_file("))
+    )
     rules_path = Path(__file__).parent / "rules.pl"
     if not rules_path.exists():
         return None
     rules_text = rules_path.read_text(encoding="utf-8")
     db = PythonPrologDB()
     db.parse_and_load(filtered_facts)
+    # Source-analysis facts omit generated reports, test contracts and binaries.
+    # Check exact declared paths without walking or parsing excluded trees.
+    root = proj_dir.resolve()
+    document = root / "SUMD.md"
+    declared = _extract_markpact_files(document.read_text(encoding="utf-8")) if document.is_file() else []
+    for fact in declared:
+        # Decode the formatter's outer argument delimiters, then insert literal
+        # Terms so punctuation/quotes in a path never become Prolog syntax.
+        args = fact.removeprefix("sumd_declared_file('").removesuffix("').")
+        relative, _, kind = args.rpartition("', '")
+        db.add_fact("sumd_declared_file", Term(relative), Term(kind))
+        target = (root / relative).resolve()
+        if target.is_relative_to(root) and target.is_file():
+            # Validation-only facts assert existence, not source metrics. Literal
+            # Terms preserve uppercase names and quotes without parsing paths.
+            db.add_fact("project_file", Term(relative), 0, Term("declared"))
     db.parse_and_load(rules_text)
     return db
 
