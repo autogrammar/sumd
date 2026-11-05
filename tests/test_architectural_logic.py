@@ -55,6 +55,65 @@ def test_architectural_validation_missing_file(tmp_path):
     assert any("declared_file_missing" in err and "missing.py" in err for err in errors)
 
 
+def _declare_file(root, relative):
+    (root / "Makefile").write_text("", encoding="utf-8")
+    (root / "SUMD.md").write_text(
+        f"# fixture\n\n```text markpact:analysis path={relative}\nfixture\n```\n",
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize("relative", [
+    "project/map.toon.yaml", "project/calls.toon.yaml", "project/logic.pl",
+    "testql-scenarios/generated.testql.toon.yaml", "assets/image.bin", "LICENSE",
+    "reports/owner's-report.bin",
+])
+def test_declared_existing_files_need_not_be_in_analysis_inventory(tmp_path, relative):
+    path = tmp_path / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"fixture\n")
+    (tmp_path / ".sumdignore").write_text("project/\ntestql-scenarios/\nassets/\nreports/\nLICENSE\n")
+    _declare_file(tmp_path, relative)
+    assert validate_project_architecture(tmp_path) == []
+    path.unlink()
+    assert any("declared_file_missing" in error for error in validate_project_architecture(tmp_path))
+
+
+def test_declared_missing_file_is_not_exempt_when_its_tree_is_ignored(tmp_path):
+    (tmp_path / ".sumdignore").write_text("project/\n")
+    _declare_file(tmp_path, "project/missing.bin")
+    errors = validate_project_architecture(tmp_path)
+    assert any("declared_file_missing(project/missing.bin" in error for error in errors)
+
+
+def test_cached_source_facts_cannot_hide_current_missing_declarations(tmp_path):
+    _declare_file(tmp_path, "new-missing.bin")
+    (tmp_path / "project").mkdir()
+    (tmp_path / "project/logic.pl").write_text(
+        "project_file('new-missing.bin', 1, 'python').\n"
+        "sumd_declared_file('old-missing.bin', 'analysis').\n"
+    )
+    errors = validate_project_architecture(tmp_path)
+    assert any("declared_file_missing(new-missing.bin" in error for error in errors)
+    assert not any("old-missing.bin" in error for error in errors)
+
+
+@pytest.mark.parametrize("kind", ["directory", "dangling", "outside"])
+def test_declared_non_file_or_external_target_remains_invalid(tmp_path, kind):
+    path = tmp_path / "artifact.bin"
+    if kind == "directory":
+        path.mkdir()
+    elif kind == "dangling":
+        path.symlink_to("missing.bin")
+    else:
+        outside = tmp_path.parent / (tmp_path.name + "-outside.bin")
+        outside.write_bytes(b"external")
+        path.symlink_to(outside)
+    _declare_file(tmp_path, "artifact.bin")
+    errors = validate_project_architecture(tmp_path)
+    assert any("declared_file_missing(artifact.bin" in error for error in errors)
+
+
 def test_architectural_validation_aligned(tmp_path):
     """Test that an entirely consistent project reports no errors."""
     proj_dir = tmp_path
