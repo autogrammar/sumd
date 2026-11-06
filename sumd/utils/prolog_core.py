@@ -70,20 +70,46 @@ def is_variable(x: Any) -> bool:
 _ANON_COUNTER = 0
 
 
+def _top_level_operator(text: str, operator: str) -> int:
+    """Find an operator outside quoted atoms and compound arguments."""
+    quote = None
+    escaped = False
+    depth = 0
+    for index, char in enumerate(text):
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif char in "'\"":
+            quote = char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif depth == 0 and text.startswith(operator, index):
+            return index
+    return -1
+
+
 def _parse_str_to_term(x: str) -> Any:
     x = x.strip()
+    if x.startswith("'") and x.endswith("'") and len(x) >= 2:
+        escapes = {"\\": "\\", "'": "'", "n": "\n", "r": "\r", "t": "\t"}
+        return Term(re.sub(r"\\([\\'nrt])", lambda match: escapes[match[1]], x[1:-1]))
     if x.startswith("\\+"):
         return Term("\\+", to_term(x[2:].strip()))
-    if "\\=" in x:
-        left, right = x.split("\\=", 1)
+    operator = _top_level_operator(x, "\\=")
+    if operator >= 0:
+        left, right = x[:operator], x[operator + 2:]
         return Term("\\=", to_term(left.strip()), to_term(right.strip()))
-    m = re.match(r"^([a-z_][a-zA-Z0-9_]*)\((.*)\)$", x)
+    m = re.match(r"^([a-z_][a-zA-Z0-9_]*)\((.*)\)$", x, re.DOTALL)
     if m:
         op, args_str = m.group(1), m.group(2)
         args = [to_term(a.strip()) for a in _split_body_terms(args_str) if a.strip()]
         return Term(op, *args)
-    if x.startswith("'") and x.endswith("'") and len(x) >= 2:
-        x = x[1:-1].replace("\\'", "'")
     return Term(x)
 
 def to_term(x: Any) -> Any:
@@ -107,13 +133,20 @@ class _SplitState:
     current_term: List[str]
     paren_depth: int
     in_quotes: bool
+    escaped: bool = False
 
 def _handle_quotes_and_parens(char: str, prev_char: str, state: _SplitState) -> bool:
-    if char == "'" and prev_char != "\\":
-        state.in_quotes = not state.in_quotes
-        state.current_term.append(char)
-        return True
     if state.in_quotes:
+        state.current_term.append(char)
+        if state.escaped:
+            state.escaped = False
+        elif char == "\\":
+            state.escaped = True
+        elif char == "'":
+            state.in_quotes = False
+        return True
+    if char == "'":
+        state.in_quotes = True
         state.current_term.append(char)
         return True
     if char == "(":
@@ -147,6 +180,58 @@ def _split_body_terms(body_str: str) -> List[str]:
     return [t for t in state.terms if t]
 
 
+def _prolog_clauses(text: str) -> List[str]:
+    """Split clauses and remove comments only outside quoted atom contents."""
+    clauses = []
+    current = []
+    quote = None
+    escaped = False
+    depth = 0
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote:
+            current.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif char in "'\"":
+            quote = char
+            current.append(char)
+        elif char == "%":
+            newline = text.find("\n", index)
+            index = len(text) if newline < 0 else newline
+            current.append("\n")
+            continue
+        elif text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            index = len(text) if end < 0 else end + 2
+            current.append(" ")
+            continue
+        elif char == "." and depth == 0 and (
+            index + 1 == len(text) or text[index + 1].isspace()
+            or text[index + 1] == "%" or text.startswith("/*", index + 1)
+        ):
+            clause = "".join(current).strip()
+            if clause:
+                clauses.append(clause)
+            current = []
+        else:
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            current.append(char)
+        index += 1
+    clause = "".join(current).strip()
+    if clause:
+        clauses.append(clause)
+    return clauses
+
+
 class PythonPrologDB:
     """In-memory Prolog database for pure Python execution."""
     def __init__(self):
@@ -160,15 +245,10 @@ class PythonPrologDB:
 
     def parse_and_load(self, prolog_text: str):
         """Parses a simple Prolog file into rules/facts."""
-        # Clean comments
-        prolog_text = re.sub(r"%.*$", "", prolog_text, flags=re.MULTILINE)
-        prolog_text = re.sub(r"/\*.*?\*/", "", prolog_text, flags=re.DOTALL)
-
-        # Split into clauses by dot ending (checking for dot followed by whitespace or EOF)
-        clauses = [c.strip() for c in re.split(r"\.(?:\s+|$)", prolog_text) if c.strip()]
-        for c in clauses:
-            if ":-" in c:
-                head_str, body_str = c.split(":-", 1)
+        for c in _prolog_clauses(prolog_text):
+            separator = _top_level_operator(c, ":-")
+            if separator >= 0:
+                head_str, body_str = c[:separator], c[separator + 2:]
                 head = to_term(head_str.strip())
                 # Parse comma separated body terms
                 body = [to_term(b.strip()) for b in _split_body_terms(body_str.strip()) if b.strip()]
