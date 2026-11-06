@@ -1251,7 +1251,7 @@ def _facts_taskfile(proj_dir: Path) -> list[str]:
     try:
         tasks = extract_taskfile(proj_dir)
         for task in tasks:
-            name_clean = task.get("task", "").replace("'", "\\'")
+            name_clean = task.get("name", "").replace("'", "\\'")
             desc_clean = task.get("desc", "").replace("'", "\\'").replace("\n", " ")
             facts.append(f"taskfile_task('{name_clean}', '{desc_clean}').")
     except Exception:
@@ -1346,28 +1346,88 @@ def _extract_doql_interfaces(doql_content: str) -> list[str]:
     return facts
 
 
+def _doql_syntax_positions(text: str) -> set[int]:
+    """Locate structural characters outside quotes and whole-line comments."""
+    positions = set()
+    quote = None
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if quote:
+            if char == quote:
+                quote = None
+        elif char in "\"'`":
+            quote = char
+        elif text.startswith("//", index) and not text[text.rfind("\n", 0, index) + 1:index].strip():
+            newline = text.find("\n", index)
+            index = len(text) if newline < 0 else newline
+            continue
+        else:
+            positions.add(index)
+        index += 1
+    return positions
+
+
+def _doql_workflow_bodies(content: str):
+    """Balance nested template/shell braces instead of stopping at the first }."""
+    syntax = _doql_syntax_positions(content)
+    headers = re.finditer(r'workflow\[name="(?P<name>[^"]+)"\]\s*\{', content)
+    for header in headers:
+        if header.start() not in syntax:
+            continue
+        depth = 1
+        for index in range(header.end(), len(content)):
+            if index not in syntax:
+                continue
+            if content[index] == "{":
+                depth += 1
+            elif content[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    yield header.group("name"), content[header.end():index]
+                    break
+
+
+def _doql_workflow_steps(body: str):
+    """Commands end at the next field, retaining internal shell semicolons."""
+    syntax = _doql_syntax_positions(body)
+    fields = [match for match in re.finditer(
+        r"(?:^|(?<=;))[ \t]*(?P<field>trigger|step-\d+):[ \t]*", body, re.MULTILINE
+    ) if match.start("field") in syntax]
+    for number, field in enumerate(fields):
+        if not field.group("field").startswith("step-"):
+            continue
+        end = fields[number + 1].start() if number + 1 < len(fields) else len(body)
+        value = body[field.end():end].strip()
+        command = re.fullmatch(r"run\s+cmd=([\s\S]+);", value)
+        if command:
+            yield field.group("field")[5:], command.group(1).strip()
+
+
+def _workflow_atom(value: str) -> str:
+    """Keep multiline commands in one quoted Prolog fact without data loss."""
+    return (value.replace("\\", "\\\\").replace("'", "\\'")
+            .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t"))
+
+
 def _extract_doql_workflows(doql_content: str) -> list[str]:
     """Extract workflow facts from app.doql.less content."""
     facts = []
-    workflow_blocks = re.finditer(
-        r'workflow\[name="(?P<name>[^"]+)"\]\s*\{(?P<body>[\s\S]*?)\}',
-        doql_content,
-    )
-    for wb in workflow_blocks:
-        w_name = wb.group("name").replace("'", "\\'")
-        body = wb.group("body")
+    for name, body in _doql_workflow_bodies(doql_content):
+        w_name = _workflow_atom(name)
         trig_m = re.search(r"trigger:\s*([^;]+);", body)
-        w_trig = trig_m.group(1).strip().replace("'", "\\'") if trig_m else ""
+        w_trig = _workflow_atom(trig_m.group(1).strip()) if trig_m else ""
         facts.append(f"sumd_workflow('{w_name}', '{w_trig}').")
 
         if w_name.startswith("quality:"):
             gate_name = w_name.split(":", 1)[1]
             facts.append(f"sumd_quality_workflow('{w_name}', '{gate_name}').")
 
-        steps = re.finditer(r"step-(?P<idx>\d+):\s*run\s+cmd=(?P<cmd>[^;\n]+);", body)
-        for st in steps:
-            s_idx = st.group("idx")
-            s_cmd = st.group("cmd").strip().replace("'", "\\'")
+        for s_idx, command in _doql_workflow_steps(body):
+            s_cmd = _workflow_atom(command)
             facts.append(f"sumd_workflow_step('{w_name}', {s_idx}, '{s_cmd}').")
     return facts
 
